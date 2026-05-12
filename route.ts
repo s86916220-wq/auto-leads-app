@@ -12,46 +12,50 @@ export async function POST(req: Request) {
     const body = await req.json()
     const { profileId, name, phone, message } = body
 
+    console.log('--- DIAGNOSTIC START ---')
+    console.log('Received Lead:', { name, phone, profileId })
+    console.log('Base ID:', process.env.AIRTABLE_BASE_ID)
+    console.log('Table Name:', process.env.AIRTABLE_TABLE_NAME)
+
     if (!name || !phone) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return NextResponse.json({ error: 'Missing Name or Phone' }, { status: 400 })
     }
 
     // 1. Generate AI response
-    const openai = getOpenAI()
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        { 
-          role: "system", 
-          content: "You are a helpful assistant for a contractor. A new lead just messaged. Draft a friendly, professional SMS reply to acknowledge their request and ask one clarifying question. Keep it under 160 characters." 
-        },
-        { 
-          role: "user", 
-          content: `Lead Name: ${name}\nLead Message: ${message}` 
-        }
-      ],
-    })
-
-    const aiReply = completion.choices[0].message.content
-
-    // 2. Save lead to Airtable (Using hardcoded IDs for maximum reliability)
-    const airtableData = {
-      records: [
-        {
-          fields: {
-            "Name": name,
-            "Phone": phone,
-            "Message": message,
-            "AI Response": aiReply,
-            "Profile ID": profileId || "default",
-            "Status": "New"
-          }
-        }
-      ]
+    let aiReply = "Thank you! We will get back to you shortly."
+    try {
+      const openai = getOpenAI()
+      const completion = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [
+          { role: "system", content: "You are a contractor assistant. Draft a 160 char SMS reply." },
+          { role: "user", content: `Lead: ${name}. Message: ${message}` }
+        ],
+      })
+      aiReply = completion.choices[0].message.content || aiReply
+      console.log('AI Response Generated:', aiReply)
+    } catch (aiErr: any) {
+      console.error('AI Error:', aiErr.message)
     }
 
-    // Using your specific Base ID (appuKjwEEngthHc6B) and Table ID (tbl4k0Oimc5OTARu0)
-    const res = await fetch(`https://api.airtable.com/v0/appuKjwEEngthHc6B/tbl4k0Oimc5OTARu0`, {
+    // 2. Save lead to Airtable
+    const airtableData = {
+      records: [{
+        fields: {
+          "Name": name,
+          "Phone": phone,
+          "Message": message,
+          "AI Response": aiReply,
+          "Profile ID": profileId || "default",
+          "Status": "New"
+        }
+      }]
+    }
+
+    const airtableUrl = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_NAME}`
+    console.log('Sending to Airtable URL:', airtableUrl)
+
+    const res = await fetch(airtableUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.AIRTABLE_TOKEN}`,
@@ -60,14 +64,23 @@ export async function POST(req: Request) {
       body: JSON.stringify(airtableData)
     })
 
+    const airtableResponse = await res.json()
+
     if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.error?.message || 'Airtable error')
+      console.error('--- AIRTABLE ERROR DETAILS ---')
+      console.error('Status:', res.status)
+      console.error('Full Error:', JSON.stringify(airtableResponse, null, 2))
+      return NextResponse.json({ 
+        error: `Airtable Error: ${airtableResponse.error?.message || 'Unknown'}` 
+      }, { status: 500 })
     }
+
+    console.log('Success! Lead saved to Airtable.')
+    console.log('--- DIAGNOSTIC END ---')
 
     return NextResponse.json({ success: true, aiReply })
   } catch (error: any) {
-    console.error('Lead error:', error.message)
+    console.error('System Error:', error.message)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
