@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
-// Initialize OpenAI inside the route to avoid build-time issues
 const getOpenAI = () => new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
@@ -20,7 +19,7 @@ export async function POST(req: Request) {
     // 1. Generate AI response
     const openai = getOpenAI()
     const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo", // Using gpt-3.5-turbo for maximum compatibility
+      model: "gpt-3.5-turbo",
       messages: [
         { 
           role: "system", 
@@ -35,7 +34,7 @@ export async function POST(req: Request) {
 
     const aiReply = completion.choices[0].message.content
 
-    // 2. Save lead to Airtable
+    // 2. Save lead to Airtable (Using hardcoded IDs for maximum reliability)
     const airtableData = {
       records: [
         {
@@ -51,7 +50,8 @@ export async function POST(req: Request) {
       ]
     }
 
-    const res = await fetch(`https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_NAME}`, {
+    // Using your specific Base ID (appuKjwEEngthHc6B) and Table ID (tbl4k0Oimc5OTARu0)
+    const res = await fetch(`https://api.airtable.com/v0/appuKjwEEngthHc6B/tbl4k0Oimc5OTARu0`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.AIRTABLE_TOKEN}`,
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, aiReply })
   } catch (error: any) {
-    console.error('Lead error:', error)
+    console.error('Lead error:', error.message)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
